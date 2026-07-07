@@ -91,7 +91,7 @@ main { max-width: 1280px; margin: 0 auto; padding: 1.5rem; }
 .btn-primary:hover { background: #19d3d5; }
 .btn-ghost { color: var(--text-dim); border-color: var(--border); font-size: 0.85rem; padding: 0.35rem 0.8rem; }
 .btn-ghost:hover { color: var(--text); background: var(--bg-hover); }
-button.btn { font-family: inherit; background: none; }
+button.btn { font-family: inherit; }
 
 .controls {
   display: flex;
