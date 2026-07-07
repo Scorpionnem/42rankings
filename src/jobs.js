@@ -1,0 +1,198 @@
+'use strict';
+
+const { ftGetAll } = require('./ft');
+
+const CACHE_TTL = (Number(process.env.CACHE_TTL) || 900) * 1000;
+
+// key -> { status: 'loading'|'ready'|'error', progress, data, error, builtAt }
+const jobs = new Map();
+
+function getJob(key, builder) {
+  const existing = jobs.get(key);
+  if (existing) {
+    const expired = existing.status === 'ready' && Date.now() - existing.builtAt > CACHE_TTL;
+    const failed = existing.status === 'error';
+    if (!expired && !failed) return existing;
+  }
+
+  const job = { status: 'loading', progress: { fetched: 0, total: null }, data: null, error: null, builtAt: null };
+  jobs.set(key, job);
+
+  builder(job)
+    .then((data) => {
+      job.data = data;
+      job.status = 'ready';
+      job.builtAt = Date.now();
+    })
+    .catch((err) => {
+      console.error(`job ${key} failed:`, err.message);
+      job.status = 'error';
+      job.error = err.message;
+    });
+
+  return job;
+}
+
+function publicState(job, extra = {}) {
+  if (job.status === 'ready') return { status: 'ready', builtAt: job.builtAt, ...extra, data: job.data };
+  if (job.status === 'error') return { status: 'error', error: job.error };
+  return { status: 'loading', progress: job.progress };
+}
+
+// --- Leaderboard: one entry per student of the campus/cursus pair ---------
+
+function isAnonymized(user) {
+  return typeof user.login === 'string' && user.login.startsWith('3b3-');
+}
+
+// Size of the worldwide ranking ("all campuses" view).
+const GLOBAL_TOP = Number(process.env.GLOBAL_TOP) || 1000;
+
+function mapRow(cu) {
+  const u = cu.user;
+  return {
+    id: u.id,
+    login: u.login,
+    displayname: u.displayname,
+    image: u.image && u.image.versions ? u.image.versions.small : null,
+    url: `https://profile.intra.42.fr/users/${u.login}`,
+    level: cu.level,
+    grade: cu.grade,
+    wallet: u.wallet ?? null,
+    correction_point: u.correction_point ?? null,
+    pool_month: u.pool_month,
+    pool_year: u.pool_year,
+    staff: u['staff?'] === true,
+    alumni: u['alumni?'] === true,
+    active: u['active?'] !== false,
+    begin_at: cu.begin_at,
+    blackholed_at: cu.blackholed_at || null,
+    campus: null,
+    projects: null,
+  };
+}
+
+async function buildCampusBoard(campusId, cursusId, j, range) {
+  const params = { 'filter[campus_id]': campusId, 'filter[cursus_id]': cursusId };
+  if (range) params['range[begin_at]'] = `${range.from},${range.to}`;
+  const rows = await ftGetAll(
+    '/v2/cursus_users',
+    params,
+    (fetched, total) => { j.progress = { fetched, total }; }
+  );
+
+  const byUser = new Map();
+  for (const cu of rows) {
+    const u = cu.user;
+    if (!u || isAnonymized(u)) continue;
+    // Keep the highest-level entry if a user somehow appears twice.
+    const prev = byUser.get(u.id);
+    if (prev && prev.level >= cu.level) continue;
+    byUser.set(u.id, mapRow(cu));
+  }
+  return [...byUser.values()].sort((a, b) => b.level - a.level);
+}
+
+// Worldwide ranking: fetching every cursus_user on Earth would take hours at
+// 2 req/s, so we let the API sort by level and only take the top GLOBAL_TOP,
+// then resolve each user's primary campus in batches of 100 ids.
+async function buildGlobalBoard(cursusId, j, range) {
+  const params = { 'filter[cursus_id]': cursusId, sort: '-level' };
+  if (range) params['range[begin_at]'] = `${range.from},${range.to}`;
+  const rows = await ftGetAll(
+    '/v2/cursus_users',
+    params,
+    (fetched, total) => {
+      j.progress = { fetched, total: Math.min(total || GLOBAL_TOP, GLOBAL_TOP) };
+    },
+    Math.ceil(GLOBAL_TOP / 100)
+  );
+
+  const byUser = new Map();
+  for (const cu of rows) {
+    const u = cu.user;
+    if (!u || isAnonymized(u) || byUser.has(u.id)) continue;
+    byUser.set(u.id, mapRow(cu));
+  }
+  const board = [...byUser.values()].sort((a, b) => b.level - a.level);
+
+  const campusName = new Map((await campusesData()).map((c) => [c.id, c.name]));
+  const ids = board.map((r) => r.id);
+  for (let i = 0; i < ids.length; i += 100) {
+    const chunk = ids.slice(i, i + 100);
+    const memberships = await ftGetAll('/v2/campus_users', {
+      'filter[user_id]': chunk.join(','),
+    });
+    for (const m of memberships) {
+      const row = byUser.get(m.user_id);
+      if (row && (m.is_primary || row.campus === null)) {
+        row.campus = campusName.get(m.campus_id) || `campus #${m.campus_id}`;
+      }
+    }
+  }
+  return board;
+}
+
+function getLeaderboard(campusId, cursusId, range = null) {
+  const key = `lb:${campusId}:${cursusId}` + (range ? `:${range.from}:${range.to}` : '');
+  const job = getJob(key, (j) =>
+    campusId === 'all'
+      ? buildGlobalBoard(cursusId, j, range)
+      : buildCampusBoard(campusId, cursusId, j, range)
+  );
+  return publicState(job);
+}
+
+// --- Projects completed: validated projects_users, grouped by user --------
+
+function getProjectCounts(campusId) {
+  const key = `pj:${campusId}`;
+  const job = getJob(key, async (j) => {
+    const rows = await ftGetAll(
+      '/v2/projects_users',
+      { 'filter[campus]': campusId },
+      (fetched, total) => { j.progress = { fetched, total }; }
+    );
+    const counts = {};
+    for (const pu of rows) {
+      if (pu['validated?'] !== true || !pu.user) continue;
+      counts[pu.user.id] = (counts[pu.user.id] || 0) + 1;
+    }
+    return counts;
+  });
+  return publicState(job);
+}
+
+// --- Reference data (campuses, cursuses), cached once ---------------------
+
+let campusesPromise = null;
+function campusesData() {
+  if (!campusesPromise) {
+    campusesPromise = ftGetAll('/v2/campus').catch((err) => {
+      campusesPromise = null;
+      throw err;
+    });
+  }
+  return campusesPromise;
+}
+
+function getCampuses() {
+  const job = getJob('campuses', async () => {
+    const rows = await campusesData();
+    return rows
+      .filter((c) => c.public !== false)
+      .map((c) => ({ id: c.id, name: c.name, country: c.country, users_count: c.users_count }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  });
+  return publicState(job);
+}
+
+function getCursuses() {
+  const job = getJob('cursuses', async (j) => {
+    const rows = await ftGetAll('/v2/cursus', {}, (f, t) => { j.progress = { fetched: f, total: t }; });
+    return rows.map((c) => ({ id: c.id, name: c.name, kind: c.kind }));
+  });
+  return publicState(job);
+}
+
+module.exports = { getLeaderboard, getProjectCounts, getCampuses, getCursuses };

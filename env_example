@@ -1,0 +1,15 @@
+# Create an application at https://profile.intra.42.fr/oauth/applications/new
+# Redirect URI must be: <BASE_URL>/auth/callback  (e.g. http://localhost:3000/auth/callback)
+FT_CLIENT_ID=your_client_uid_here
+FT_CLIENT_SECRET=your_client_secret_here
+
+# Public base URL of this app (no trailing slash)
+BASE_URL=http://localhost:3000
+
+# Random string used to sign session cookies (generate with: openssl rand -hex 32)
+SESSION_SECRET=change_me
+
+PORT=3000
+
+# Seconds a built leaderboard stays cached before a rebuild is allowed
+CACHE_TTL=900

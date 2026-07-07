@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Trombinoscope — 42 Rankings</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏆</text></svg>">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">4<span class="accent">2</span> Rankings</div>
+    <nav class="nav-tabs">
+      <a href="/">🏆 Rankings</a>
+      <a href="/trombinoscope" class="active">🖼️ Trombinoscope</a>
+    </nav>
+    <div id="user-box" class="user-box hidden">
+      <img id="user-avatar" class="avatar" alt="">
+      <span id="user-login"></span>
+      <a href="/auth/logout" class="btn btn-ghost">Log out</a>
+    </div>
+  </header>
+
+  <main>
+    <!-- Login screen -->
+    <section id="login-view" class="center-card hidden">
+      <div class="card">
+        <h1>🏆 42 Rankings</h1>
+        <p>Rankings of students and pisciners for any 42 campus.<br>
+           Sort by level, completed projects, wallet, evaluation points…</p>
+        <p id="login-error" class="error hidden"></p>
+        <a href="/auth/login" class="btn btn-primary">Sign in with 42 intra</a>
+      </div>
+    </section>
+
+    <!-- Trombinoscope screen -->
+    <section id="trombi-view" class="hidden">
+      <div class="controls">
+        <label>Campus
+          <select id="campus-select"></select>
+        </label>
+        <label>Cursus
+          <select id="cursus-select"></select>
+        </label>
+        <label id="year-label" class="hidden"><span id="year-label-text">Year</span>
+          <select id="year-select"></select>
+        </label>
+        <label id="month-label" class="hidden">Month
+          <select id="month-select"></select>
+        </label>
+        <label class="grow">Search
+          <input id="search-input" type="search" placeholder="login or name…">
+        </label>
+        <label class="checkbox"><input id="hide-staff" type="checkbox" checked> Hide staff</label>
+        <button id="load-photos" class="btn btn-primary" type="button">Load photos</button>
+      </div>
+
+      <div id="status-bar" class="status hidden">
+        <div class="spinner"></div>
+        <span id="status-text"></span>
+        <div class="progress"><div id="progress-fill" class="progress-fill"></div></div>
+      </div>
+
+      <p id="trombi-error" class="error hidden"></p>
+      <p id="trombi-hint" class="trombi-count">Pick a campus, cursus, and optionally a year/month, then click “Load photos”.</p>
+      <p id="trombi-count" class="trombi-count hidden"></p>
+
+      <div id="trombi-grid" class="trombi-grid"></div>
+    </section>
+  </main>
+  <script src="trombinoscope.js"></script>
+</body>
+</html>
