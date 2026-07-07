@@ -8,7 +8,7 @@ const express = require('express');
 const cookieSession = require('cookie-session');
 
 const { API_BASE } = require('./src/ft');
-const { getLeaderboard, getProjectCounts, getCampuses, getCursuses } = require('./src/jobs');
+const { getLeaderboard, getProjectCounts, getCampuses, getCursuses, getExamTracker } = require('./src/jobs');
 
 for (const name of ['FT_CLIENT_ID', 'FT_CLIENT_SECRET', 'SESSION_SECRET']) {
   if (!process.env[name]) {
@@ -35,6 +35,10 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 app.get('/trombinoscope', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'trombinoscope.html'));
+});
+
+app.get('/exam-tracker', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'exam-tracker.html'));
 });
 
 // --- OAuth with the 42 intra -----------------------------------------------
@@ -149,6 +153,15 @@ app.get('/api/projects', requireAuth, (req, res) => {
     return res.status(400).json({ error: 'campus_id is required' });
   }
   res.json(getProjectCounts(campusId));
+});
+
+app.get('/api/exam-tracker', requireAuth, (req, res) => {
+  const campusId = req.query.campus_id === 'all' ? 'all' : Number(req.query.campus_id);
+  const validCampus = campusId === 'all' || (Number.isInteger(campusId) && campusId > 0);
+  if (!validCampus) {
+    return res.status(400).json({ error: 'campus_id is required' });
+  }
+  res.json(getExamTracker(campusId, req.query.refresh === '1'));
 });
 
 app.listen(PORT, () => {

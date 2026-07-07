@@ -7,9 +7,9 @@ const CACHE_TTL = (Number(process.env.CACHE_TTL) || 900) * 1000;
 // key -> { status: 'loading'|'ready'|'error', progress, data, error, builtAt }
 const jobs = new Map();
 
-function getJob(key, builder) {
+function getJob(key, builder, force = false) {
   const existing = jobs.get(key);
-  if (existing) {
+  if (existing && !force) {
     const expired = existing.status === 'ready' && Date.now() - existing.builtAt > CACHE_TTL;
     const failed = existing.status === 'error';
     if (!expired && !failed) return existing;
@@ -163,6 +163,77 @@ function getProjectCounts(campusId) {
   return publicState(job);
 }
 
+// --- Exam tracker: students currently sitting an exam, live-ranked ---------
+
+// An exam project's "team" is created the moment a student starts an
+// attempt; its final_mark is filled in progressively by the automated
+// corrector while the student is still at the machine. Scoping teams to the
+// exam's own time window (and campus) is what turns "every attempt ever" into
+// "who is in the room right now".
+const EXAM_LOOKBACK_MS = 8 * 3600 * 1000; // covers the longest exam slot + buffer
+
+async function buildExamTracker(campusId, j) {
+  const now = new Date();
+  const from = new Date(now.getTime() - EXAM_LOOKBACK_MS).toISOString();
+  const params = { 'range[begin_at]': `${from},${now.toISOString()}` };
+  if (campusId !== 'all') params['filter[campus_id]'] = campusId;
+
+  const exams = await ftGetAll('/v2/exams', params);
+  const ongoing = exams.filter((e) => new Date(e.begin_at) <= now && new Date(e.end_at) >= now);
+
+  const calls = ongoing.flatMap((exam) => (exam.projects || []).map((project) => ({ exam, project })));
+  j.progress = { fetched: 0, total: calls.length };
+
+  const byUser = new Map(); // user id -> row, keeping their most recent attempt
+  for (const { exam, project } of calls) {
+    const teams = await ftGetAll('/v2/projects/' + project.id + '/teams', {
+      'filter[campus]': exam.campus.id,
+      'range[created_at]': `${exam.begin_at},${exam.end_at}`,
+    });
+    for (const team of teams) {
+      for (const u of team.users || []) {
+        const prev = byUser.get(u.id);
+        if (prev && new Date(prev.created_at) >= new Date(team.created_at)) continue;
+        byUser.set(u.id, {
+          id: u.id,
+          login: u.login,
+          exam_name: exam.name,
+          campus: exam.campus.name,
+          project_name: project.name,
+          final_mark: team.final_mark,
+          status: team.status,
+          begin_at: exam.begin_at,
+          end_at: exam.end_at,
+          created_at: team.created_at,
+        });
+      }
+    }
+    j.progress = { fetched: j.progress.fetched + 1, total: calls.length };
+  }
+
+  const ids = [...byUser.keys()];
+  for (let i = 0; i < ids.length; i += 100) {
+    const chunk = ids.slice(i, i + 100);
+    const users = await ftGetAll('/v2/users', { 'filter[id]': chunk.join(',') });
+    for (const u of users) {
+      const row = byUser.get(u.id);
+      if (!row) continue;
+      row.displayname = u.displayname;
+      row.image = u.image && u.image.versions ? u.image.versions.small : null;
+      row.url = `https://profile.intra.42.fr/users/${u.login}`;
+      row.staff = u['staff?'] === true;
+    }
+  }
+
+  return [...byUser.values()].sort((a, b) => (b.final_mark ?? -1) - (a.final_mark ?? -1));
+}
+
+function getExamTracker(campusId, force = false) {
+  const key = `exam:${campusId}`;
+  const job = getJob(key, (j) => buildExamTracker(campusId, j), force);
+  return publicState(job);
+}
+
 // --- Reference data (campuses, cursuses), cached once ---------------------
 
 let campusesPromise = null;
@@ -195,4 +266,4 @@ function getCursuses() {
   return publicState(job);
 }
 
-module.exports = { getLeaderboard, getProjectCounts, getCampuses, getCursuses };
+module.exports = { getLeaderboard, getProjectCounts, getCampuses, getCursuses, getExamTracker };

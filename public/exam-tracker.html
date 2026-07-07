@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Trombinoscope — 42 Rankings</title>
+  <title>Exam Tracker — 42 Rankings</title>
   <link rel="stylesheet" href="style.css">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏆</text></svg>">
 </head>
@@ -12,8 +12,8 @@
     <div class="brand">4<span class="accent">2</span> Rankings</div>
     <nav class="nav-tabs">
       <a href="/">🏆 Rankings</a>
-      <a href="/trombinoscope" class="active">🖼️ Trombinoscope</a>
-      <a href="/exam-tracker">📝 Exam Tracker</a>
+      <a href="/trombinoscope">🖼️ Trombinoscope</a>
+      <a href="/exam-tracker" class="active">📝 Exam Tracker</a>
     </nav>
     <div id="user-box" class="user-box hidden">
       <img id="user-avatar" class="avatar" alt="">
@@ -34,26 +34,16 @@
       </div>
     </section>
 
-    <!-- Trombinoscope screen -->
-    <section id="trombi-view" class="hidden">
+    <!-- Exam tracker screen -->
+    <section id="exam-view" class="hidden">
       <div class="controls">
         <label>Campus
           <select id="campus-select"></select>
         </label>
-        <label>Cursus
-          <select id="cursus-select"></select>
-        </label>
-        <label id="year-label" class="hidden"><span id="year-label-text">Year</span>
-          <select id="year-select"></select>
-        </label>
-        <label id="month-label" class="hidden">Month
-          <select id="month-select"></select>
-        </label>
         <label class="grow">Search
           <input id="search-input" type="search" placeholder="login or name…">
         </label>
-        <label class="checkbox"><input id="hide-staff" type="checkbox" checked> Hide staff</label>
-        <button id="load-photos" class="btn btn-primary" type="button">Load photos</button>
+        <button id="refresh-exam" class="btn btn-primary" type="button">↻ Refresh</button>
       </div>
 
       <div id="status-bar" class="status hidden">
@@ -62,13 +52,28 @@
         <div class="progress"><div id="progress-fill" class="progress-fill"></div></div>
       </div>
 
-      <p id="trombi-error" class="error hidden"></p>
-      <p id="trombi-hint" class="trombi-count">Pick a campus, cursus, and optionally a year/month, then click “Load photos”.</p>
-      <p id="trombi-count" class="trombi-count hidden"></p>
+      <p id="exam-error" class="error hidden"></p>
+      <p id="exam-meta" class="meta hidden"></p>
+      <p id="exam-empty" class="meta hidden">No exam is currently running for this campus.</p>
 
-      <div id="trombi-grid" class="trombi-grid"></div>
+      <div class="table-wrap">
+        <table id="exam-table">
+          <thead>
+            <tr>
+              <th class="num">#</th>
+              <th>Student</th>
+              <th class="campus-col">Campus</th>
+              <th>Exam</th>
+              <th>Project</th>
+              <th class="num">Current grade</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody id="exam-body"></tbody>
+        </table>
+      </div>
     </section>
   </main>
-  <script src="trombinoscope.js"></script>
+  <script src="exam-tracker.js"></script>
 </body>
 </html>
