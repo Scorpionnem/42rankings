@@ -172,6 +172,12 @@ function getProjectCounts(campusId) {
 // "who is in the room right now".
 const EXAM_LOOKBACK_MS = 8 * 3600 * 1000; // covers the longest exam slot + buffer
 
+// Exam teams get created when the student enters examshell, which happens up
+// to ~half an hour BEFORE the exam's official begin_at (observed live: teams
+// at 10:26 UTC for an 11:00 UTC exam). Open the created_at window early or
+// those students are invisible for the whole exam.
+const EXAM_EARLY_TEAM_MS = 3600 * 1000;
+
 async function buildExamTracker(campusId, j) {
   const now = new Date();
   const from = new Date(now.getTime() - EXAM_LOOKBACK_MS).toISOString();
@@ -186,10 +192,25 @@ async function buildExamTracker(campusId, j) {
 
   const byUser = new Map(); // user id -> row, keeping their most recent attempt
   for (const { exam, project } of calls) {
-    const teams = await ftGetAll('/v2/projects/' + project.id + '/teams', {
-      'filter[campus]': exam.campus.id,
-      'range[created_at]': `${exam.begin_at},${exam.end_at}`,
+    // Two ways a team belongs to this exam sitting:
+    //  - created in the window: cursus students, whose team appears when they
+    //    enter examshell (up to ~30 min before the official start);
+    //  - updated in the window: pisciners, whose team is created at
+    //    registration days earlier and only touched again when the automated
+    //    corrector grades them during the exam.
+    const teamsFrom = new Date(new Date(exam.begin_at).getTime() - EXAM_EARLY_TEAM_MS).toISOString();
+    const scope = { 'filter[campus]': exam.campus.id };
+    const created = await ftGetAll('/v2/projects/' + project.id + '/teams', {
+      ...scope, 'range[created_at]': `${teamsFrom},${exam.end_at}`,
     });
+    const updated = await ftGetAll('/v2/projects/' + project.id + '/teams', {
+      ...scope, 'range[updated_at]': `${teamsFrom},${exam.end_at}`,
+    });
+    // The updated_at window also catches a cleanup cron that closes stale
+    // teams from previous sittings mid-exam — those come back as
+    // status "finished" with a fresh closed_at, so keep in_progress only.
+    const live = updated.filter((t) => t.status === 'in_progress');
+    const teams = [...new Map([...created, ...live].map((t) => [t.id, t])).values()];
     for (const team of teams) {
       for (const u of team.users || []) {
         const prev = byUser.get(u.id);
