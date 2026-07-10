@@ -211,6 +211,8 @@ async function buildExamTracker(campusId, j) {
     // status "finished" with a fresh closed_at, so keep in_progress only.
     const live = updated.filter((t) => t.status === 'in_progress');
     const teams = [...new Map([...created, ...live].map((t) => [t.id, t])).values()];
+    const isPiscine = (exam.cursus || []).some((c) => c.kind === 'piscine')
+      || /piscine/i.test(exam.name) || /piscine/i.test(project.name);
     for (const team of teams) {
       for (const u of team.users || []) {
         const prev = byUser.get(u.id);
@@ -218,6 +220,7 @@ async function buildExamTracker(campusId, j) {
         byUser.set(u.id, {
           id: u.id,
           login: u.login,
+          kind: isPiscine ? 'piscine' : 'cursus',
           exam_name: exam.name,
           campus: exam.campus.name,
           project_name: project.name,

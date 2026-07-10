@@ -129,14 +129,17 @@ function render() {
   const tbody = $('exam-body');
   const query = $('search-input').value.trim().toLowerCase();
 
+  const kind = $('kind-select').value;
   const visible = state.rows.filter((r) => {
+    if (kind && r.kind !== kind) return false;
     if (query && !r.login.toLowerCase().includes(query) &&
         !(r.displayname || '').toLowerCase().includes(query)) return false;
     return true;
   });
 
   if (state.rows.length) {
-    $('exam-meta').textContent = `${visible.length} student${visible.length === 1 ? '' : 's'} currently in an exam`;
+    const noun = kind === 'piscine' ? 'pisciner' : 'student';
+    $('exam-meta').textContent = `${visible.length} ${noun}${visible.length === 1 ? '' : 's'} currently in an exam`;
     $('exam-meta').classList.remove('hidden');
     $('exam-empty').classList.add('hidden');
   } else {
@@ -180,6 +183,7 @@ function render() {
 // --- events -----------------------------------------------------------------
 
 $('campus-select').addEventListener('change', () => loadExamTracker());
+$('kind-select').addEventListener('change', render);
 $('refresh-exam').addEventListener('click', () => loadExamTracker(true));
 $('search-input').addEventListener('input', render);
 
