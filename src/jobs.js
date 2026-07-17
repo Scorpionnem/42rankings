@@ -133,8 +133,12 @@ async function buildGlobalBoard(cursusId, j, range) {
   return board;
 }
 
+function boardKey(campusId, cursusId, range = null) {
+  return `lb:${campusId}:${cursusId}` + (range ? `:${range.from}:${range.to}` : '');
+}
+
 function getLeaderboard(campusId, cursusId, range = null) {
-  const key = `lb:${campusId}:${cursusId}` + (range ? `:${range.from}:${range.to}` : '');
+  const key = boardKey(campusId, cursusId, range);
   const job = getJob(key, (j) =>
     campusId === 'all'
       ? buildGlobalBoard(cursusId, j, range)
@@ -143,22 +147,51 @@ function getLeaderboard(campusId, cursusId, range = null) {
   return publicState(job);
 }
 
-// --- Projects completed: validated projects_users, grouped by user --------
+// --- Projects completed: validated projects_users, per board --------------
 
-function getProjectCounts(campusId) {
-  const key = `pj:${campusId}`;
+// Piscine C day modules ("C Piscine C 04"), excluding Shell/Rush/Exam.
+const PISCINE_C_RE = /^C Piscine (C \d+)$/i;
+
+// Fetches projects only for the users of an already-loaded board (batched by
+// user id) instead of scanning the campus's entire projects_users — a piscine
+// cohort is a handful of requests instead of hundreds of pages.
+function getProjectCounts(campusId, cursusId, range = null) {
+  const board = jobs.get(boardKey(campusId, cursusId, range));
+  if (!board || board.status !== 'ready') {
+    return { status: 'error', error: 'board_not_loaded' };
+  }
+  const ids = board.data.map((r) => r.id);
+
+  const key = `pj:${boardKey(campusId, cursusId, range)}`;
   const job = getJob(key, async (j) => {
-    const rows = await ftGetAll(
-      '/v2/projects_users',
-      { 'filter[campus]': campusId },
-      (fetched, total) => { j.progress = { fetched, total }; }
-    );
     const counts = {};
-    for (const pu of rows) {
-      if (pu['validated?'] !== true || !pu.user) continue;
-      counts[pu.user.id] = (counts[pu.user.id] || 0) + 1;
+    // Piscine progress per user: last_c is the most recently marked C-module
+    // attempt (validated or failed), last_c_ok the most recently validated.
+    const lastC = {};
+    j.progress = { fetched: 0, total: ids.length };
+    for (let i = 0; i < ids.length; i += 100) {
+      const chunk = ids.slice(i, i + 100);
+      const pus = await ftGetAll('/v2/projects_users', { 'filter[user_id]': chunk.join(',') });
+      for (const pu of pus) {
+        if (!pu.user) continue;
+        if (pu['validated?'] === true) counts[pu.user.id] = (counts[pu.user.id] || 0) + 1;
+        const m = pu.project && PISCINE_C_RE.exec(pu.project.name);
+        if (!m || pu.final_mark === null) continue;
+        const entry = {
+          name: m[1].toUpperCase(),
+          mark: pu.final_mark,
+          validated: pu['validated?'] === true,
+          at: pu.marked_at || pu.created_at,
+        };
+        const slot = lastC[pu.user.id] || (lastC[pu.user.id] = { last_c: null, last_c_ok: null });
+        if (!slot.last_c || new Date(entry.at) > new Date(slot.last_c.at)) slot.last_c = entry;
+        if (entry.validated && (!slot.last_c_ok || new Date(entry.at) > new Date(slot.last_c_ok.at))) {
+          slot.last_c_ok = entry;
+        }
+      }
+      j.progress = { fetched: Math.min(i + 100, ids.length), total: ids.length };
     }
-    return counts;
+    return { counts, last_c: lastC };
   });
   return publicState(job);
 }

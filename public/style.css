@@ -13,6 +13,7 @@
   --silver: #b0bac5;
   --bronze: #bd7e4a;
   --error: #f85149;
+  --ok: #3fb950;
 }
 
 body {
@@ -214,8 +215,15 @@ tbody tr:hover { background: var(--bg-hover); }
 
 .dim { color: var(--text-dim); }
 
+.cgrade { font-weight: 700; font-variant-numeric: tabular-nums; }
+.cgrade.ok { color: var(--ok); }
+.cgrade.fail { color: var(--error); }
+
 .campus-col { display: none; }
 table.global .campus-col { display: table-cell; }
+
+.c-col { display: none; }
+table.piscine .c-col { display: table-cell; }
 
 @media (max-width: 640px) {
   main { padding: 0.8rem; }

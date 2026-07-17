@@ -119,13 +119,14 @@ async function loadBoard() {
 
   // The year/month filter is sent to the API (range[begin_at]) instead of
   // being applied after the fact, so an unwanted cohort is never fetched.
-  let url = `/api/leaderboard?campus_id=${campusId}&cursus_id=${cursusId}`;
+  let cohort = `campus_id=${campusId}&cursus_id=${cursusId}`;
   const year = $('year-select').value;
   const month = $('month-select').value;
   if (year) {
-    url += `&year=${year}`;
-    if (month) url += `&month=${MONTHS.indexOf(month) + 1}`;
+    cohort += `&year=${year}`;
+    if (month) cohort += `&month=${MONTHS.indexOf(month) + 1}`;
   }
+  const url = `/api/leaderboard?${cohort}`;
 
   state.rows = [];
   state.projects = null;
@@ -161,22 +162,28 @@ async function loadBoard() {
 
   $('load-board').disabled = false;
   render();
-  // Project counts require scanning a whole campus's projects_users; there is
-  // no workable equivalent across every campus at once.
-  if (campusId !== 'all') pollProjects(campusId, seq);
+  // Projects are fetched only for the users on this board; there is no
+  // workable equivalent across every campus at once.
+  if (campusId !== 'all') pollProjects(cohort, seq);
 }
 
-// Project counts are built from every projects_users record of the campus —
-// that can take a while on big campuses, so it streams in after the board.
-async function pollProjects(campusId, seq) {
+// Project data is batch-fetched for the board's users right after the board
+// loads — it streams in shortly after.
+async function pollProjects(cohort, seq) {
   try {
     for (;;) {
-      const res = await api(`/api/projects?campus_id=${campusId}`);
+      const res = await api(`/api/projects?${cohort}`);
       if (seq !== state.loadSeq) return;
       if (res.status === 'ready') {
-        state.projects = res.data;
-        for (const row of state.rows) row.projects = state.projects[row.id] || 0;
-        if (state.sortKey === 'projects') sortRows();
+        state.projects = res.data.counts;
+        const lastC = res.data.last_c || {};
+        for (const row of state.rows) {
+          row.projects = state.projects[row.id] || 0;
+          const lc = lastC[row.id];
+          row.last_c = lc ? lc.last_c : null;
+          row.last_c_ok = lc ? lc.last_c_ok : null;
+        }
+        if (state.sortKey === 'projects' || state.sortKey === 'cproj') sortRows();
         render();
         return;
       }
@@ -187,7 +194,7 @@ async function pollProjects(campusId, seq) {
       }
       const p = res.progress || {};
       $('board-meta').textContent =
-        `Counting completed projects… ${p.fetched || 0}${p.total ? ' / ' + p.total : ''} records scanned`;
+        `Loading projects… ${p.fetched || 0}${p.total ? ' / ' + p.total : ''} students`;
       $('board-meta').classList.remove('hidden');
       await new Promise((r) => setTimeout(r, 2500));
     }
@@ -242,6 +249,15 @@ function buildTimeFilters() {
     $('month-label').classList.add('hidden');
     $('month-select').innerHTML = '';
   }
+
+  // The "last C project" column only exists for piscine boards, and the data
+  // comes from the per-campus projects scan — no equivalent worldwide.
+  $('cproj-label').classList.toggle('hidden', !piscine || isGlobal());
+}
+
+// The C-module entry the current toggle asks to display for a row.
+function lastCOf(r) {
+  return $('cproj-select').value === 'validated' ? r.last_c_ok : r.last_c;
 }
 
 // A month filter needs a year picked first — the API range is begin_at
@@ -263,6 +279,11 @@ function sortRows() {
     if (sortKey === 'pool') return `${r.pool_year || ''}-${String(r.pool_month || '')}`;
     if (sortKey === 'login') return r.login;
     if (sortKey === 'campus') return r.campus || '';
+    if (sortKey === 'cproj') {
+      // Module number first ("C 05" beats "C 04"), grade breaks ties.
+      const p = lastCOf(r);
+      return p ? parseInt(p.name.slice(2), 10) * 1000 + Math.min(p.mark, 999) : -Infinity;
+    }
     const v = r[sortKey];
     return v === null || v === undefined ? -Infinity : v;
   };
@@ -285,6 +306,9 @@ function render() {
   });
 
   const global = isGlobal();
+  $('board').classList.toggle('piscine', isPiscine() && !global);
+  $('cproj-th').textContent =
+    $('cproj-select').value === 'validated' ? 'Last C validated' : 'Last C pushed';
   // Rows are already restricted server-side (range[begin_at]) to whichever
   // year/month was picked before loading — only search/staff filter here.
   const visible = state.rows.filter((r) => {
@@ -336,12 +360,20 @@ function render() {
         </div>
       </td>
       <td class="num">${r.projects === null ? `<span class="dim">${global ? '—' : '…'}</span>` : r.projects}</td>
+      <td class="c-col">${cprojCell(r)}</td>
       <td class="num">${r.correction_point ?? '<span class="dim">—</span>'}</td>
       <td class="num">${r.wallet ?? '<span class="dim">—</span>'}</td>
       <td class="dim">${r.pool_month ? escapeHtml(`${r.pool_month} ${r.pool_year}`) : '—'}</td>`;
     frag.appendChild(tr);
   });
   tbody.replaceChildren(frag);
+}
+
+function cprojCell(r) {
+  if (state.projects === null) return '<span class="dim">…</span>';
+  const p = lastCOf(r);
+  if (!p) return '<span class="dim">none</span>';
+  return `${escapeHtml(p.name)} <span class="cgrade ${p.validated ? 'ok' : 'fail'}">${p.mark}</span>`;
 }
 
 function escapeHtml(s) {
@@ -399,5 +431,9 @@ $('month-select').addEventListener('change', invalidate);
 $('load-board').addEventListener('click', loadBoard);
 $('search-input').addEventListener('input', render);
 $('hide-staff').addEventListener('change', render);
+$('cproj-select').addEventListener('change', () => {
+  if (state.sortKey === 'cproj') sortRows();
+  render();
+});
 
 boot();

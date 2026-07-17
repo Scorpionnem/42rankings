@@ -49,6 +49,12 @@
         <label id="month-label" class="hidden">Month
           <select id="month-select"></select>
         </label>
+        <label id="cproj-label" class="hidden">C project
+          <select id="cproj-select">
+            <option value="pushed">Last pushed</option>
+            <option value="validated">Last validated</option>
+          </select>
+        </label>
         <label class="grow">Search
           <input id="search-input" type="search" placeholder="login or name…">
         </label>
@@ -76,6 +82,7 @@
               <th data-sort="campus" class="sortable campus-col">Campus</th>
               <th data-sort="level" class="num sortable">Level</th>
               <th data-sort="projects" class="num sortable">Projects ✔</th>
+              <th data-sort="cproj" class="sortable c-col" id="cproj-th">Last C pushed</th>
               <th data-sort="correction_point" class="num sortable">Eval pts</th>
               <th data-sort="wallet" class="num sortable">Wallet ₳</th>
               <th data-sort="pool" class="sortable">Pool</th>

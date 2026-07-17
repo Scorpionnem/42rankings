@@ -117,12 +117,14 @@ app.get('/api/campuses', requireAuth, (req, res) => res.json(getCampuses()));
 
 app.get('/api/cursuses', requireAuth, (req, res) => res.json(getCursuses()));
 
-app.get('/api/leaderboard', requireAuth, (req, res) => {
+// Both /api/leaderboard and /api/projects address the same cohort:
+// campus_id + cursus_id + optional year/month (as a begin_at range).
+function parseBoardQuery(req) {
   const campusId = req.query.campus_id === 'all' ? 'all' : Number(req.query.campus_id);
   const cursusId = Number(req.query.cursus_id);
   const validCampus = campusId === 'all' || (Number.isInteger(campusId) && campusId > 0);
   if (!validCampus || !Number.isInteger(cursusId) || cursusId <= 0) {
-    return res.status(400).json({ error: 'campus_id and cursus_id are required' });
+    return { error: 'campus_id and cursus_id are required' };
   }
 
   // Applied API-side (begin_at range) so a chosen cohort is fetched directly
@@ -133,7 +135,7 @@ app.get('/api/leaderboard', requireAuth, (req, res) => {
     const month = req.query.month ? Number(req.query.month) : null;
     const validMonth = month === null || (Number.isInteger(month) && month >= 1 && month <= 12);
     if (!Number.isInteger(year) || year < 2000 || year > 2100 || !validMonth) {
-      return res.status(400).json({ error: 'invalid year/month' });
+      return { error: 'invalid year/month' };
     }
     const pad = (n) => String(n).padStart(2, '0');
     range = month
@@ -144,15 +146,20 @@ app.get('/api/leaderboard', requireAuth, (req, res) => {
       : { from: `${year}-01-01`, to: `${year + 1}-01-01` };
   }
 
-  res.json(getLeaderboard(campusId, cursusId, range));
+  return { campusId, cursusId, range };
+}
+
+app.get('/api/leaderboard', requireAuth, (req, res) => {
+  const q = parseBoardQuery(req);
+  if (q.error) return res.status(400).json({ error: q.error });
+  res.json(getLeaderboard(q.campusId, q.cursusId, q.range));
 });
 
 app.get('/api/projects', requireAuth, (req, res) => {
-  const campusId = Number(req.query.campus_id);
-  if (!Number.isInteger(campusId) || campusId <= 0) {
-    return res.status(400).json({ error: 'campus_id is required' });
-  }
-  res.json(getProjectCounts(campusId));
+  const q = parseBoardQuery(req);
+  if (q.error) return res.status(400).json({ error: q.error });
+  if (q.campusId === 'all') return res.status(400).json({ error: 'no projects for the worldwide board' });
+  res.json(getProjectCounts(q.campusId, q.cursusId, q.range));
 });
 
 app.get('/api/exam-tracker', requireAuth, (req, res) => {
