@@ -166,7 +166,9 @@ function getProjectCounts(campusId, cursusId, range = null) {
   const job = getJob(key, async (j) => {
     const counts = {};
     // Piscine progress per user: last_c is the most recently marked C-module
-    // attempt (validated or failed), last_c_ok the most recently validated.
+    // attempt (validated or failed), last_c_ok the most recently validated,
+    // best_c the highest-numbered module ever pushed (validated or not —
+    // pushing C 09 and failing it still ranks above only ever reaching C 07).
     const lastC = {};
     j.progress = { fetched: 0, total: ids.length };
     for (let i = 0; i < ids.length; i += 100) {
@@ -179,14 +181,20 @@ function getProjectCounts(campusId, cursusId, range = null) {
         if (!m || pu.final_mark === null) continue;
         const entry = {
           name: m[1].toUpperCase(),
+          num: parseInt(m[1].slice(2), 10),
           mark: pu.final_mark,
           validated: pu['validated?'] === true,
           at: pu.marked_at || pu.created_at,
         };
-        const slot = lastC[pu.user.id] || (lastC[pu.user.id] = { last_c: null, last_c_ok: null });
+        const slot = lastC[pu.user.id] ||
+          (lastC[pu.user.id] = { last_c: null, last_c_ok: null, best_c: null });
         if (!slot.last_c || new Date(entry.at) > new Date(slot.last_c.at)) slot.last_c = entry;
         if (entry.validated && (!slot.last_c_ok || new Date(entry.at) > new Date(slot.last_c_ok.at))) {
           slot.last_c_ok = entry;
+        }
+        if (!slot.best_c || entry.num > slot.best_c.num ||
+            (entry.num === slot.best_c.num && entry.mark > slot.best_c.mark)) {
+          slot.best_c = entry;
         }
       }
       j.progress = { fetched: Math.min(i + 100, ids.length), total: ids.length };

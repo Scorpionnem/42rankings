@@ -182,6 +182,7 @@ async function pollProjects(cohort, seq) {
           const lc = lastC[row.id];
           row.last_c = lc ? lc.last_c : null;
           row.last_c_ok = lc ? lc.last_c_ok : null;
+          row.best_c = lc ? lc.best_c : null;
         }
         if (state.sortKey === 'projects' || state.sortKey === 'cproj') sortRows();
         render();
@@ -257,7 +258,10 @@ function buildTimeFilters() {
 
 // The C-module entry the current toggle asks to display for a row.
 function lastCOf(r) {
-  return $('cproj-select').value === 'validated' ? r.last_c_ok : r.last_c;
+  const mode = $('cproj-select').value;
+  if (mode === 'validated') return r.last_c_ok;
+  if (mode === 'best') return r.best_c;
+  return r.last_c;
 }
 
 // A month filter needs a year picked first — the API range is begin_at
@@ -280,9 +284,9 @@ function sortRows() {
     if (sortKey === 'login') return r.login;
     if (sortKey === 'campus') return r.campus || '';
     if (sortKey === 'cproj') {
-      // Module number first ("C 05" beats "C 04"), grade breaks ties.
+      // Module number first ("C 09" beats "C 07"), grade breaks ties.
       const p = lastCOf(r);
-      return p ? parseInt(p.name.slice(2), 10) * 1000 + Math.min(p.mark, 999) : -Infinity;
+      return p ? (p.num ?? parseInt(p.name.slice(2), 10)) * 1000 + Math.min(p.mark, 999) : -Infinity;
     }
     const v = r[sortKey];
     return v === null || v === undefined ? -Infinity : v;
@@ -307,8 +311,9 @@ function render() {
 
   const global = isGlobal();
   $('board').classList.toggle('piscine', isPiscine() && !global);
+  const cprojMode = $('cproj-select').value;
   $('cproj-th').textContent =
-    $('cproj-select').value === 'validated' ? 'Last C validated' : 'Last C pushed';
+    cprojMode === 'validated' ? 'Last C validated' : cprojMode === 'best' ? 'Best C pushed' : 'Last C pushed';
   // Rows are already restricted server-side (range[begin_at]) to whichever
   // year/month was picked before loading — only search/staff filter here.
   const visible = state.rows.filter((r) => {
